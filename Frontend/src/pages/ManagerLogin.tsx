@@ -1,7 +1,7 @@
 import { useState } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { Shield, Mail, Lock, ArrowLeft, Loader2 } from 'lucide-react';
-import { adminLogin } from '@/services/api';
+import { adminLogin, clearSession } from '@/services/api';
 import { toast } from 'sonner';
 
 const SESSION_KEY = 'admin_session';
@@ -22,6 +22,7 @@ const ManagerLogin = () => {
         toast.error('Login failed — unexpected server response');
         return;
       }
+      clearSession(); // drop any prior student/authority session before switching role
       if (res.token) localStorage.setItem('auth_token', res.token);
       localStorage.setItem(SESSION_KEY, String(Date.now() + SESSION_DURATION));
       localStorage.setItem('admin_user', JSON.stringify(res.user));

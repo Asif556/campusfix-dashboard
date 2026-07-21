@@ -5,7 +5,9 @@ Usage:
     from utils.email_queue import (
         send_complaint_raised_to_student,
         send_complaint_raised_to_admins,
-        send_authority_assigned,
+        send_assignment_to_authority,
+        send_accepted_to_student,
+        send_authority_rejected_to_notifications,
         send_pending_acceptance,
         send_fix_accepted_to_admins,
         send_reopened_to_admins,
@@ -249,8 +251,44 @@ def send_complaint_raised_to_admins(c: dict) -> None:
         )
 
 
-def send_authority_assigned(c: dict) -> None:
-    """Notify the student that an authority has been assigned."""
+def send_assignment_to_authority(c: dict) -> None:
+    """Ask the newly-assigned authority to accept or reject the task.
+
+    Fired on every assignment hop — manual admin assign, auto-assign on create,
+    and priority-cascade after a rejection. The student is intentionally NOT
+    emailed here; they only hear back once an authority *accepts*.
+    """
+    assigned = c.get("assignedTo") or {}
+    to = assigned.get("email", "")
+    if not to:
+        return
+    loc = c.get("location", {})
+    enqueue_email(
+        to=to,
+        subject=f"CampusFix — New Task Assigned, Action Required ({c['ticket_number']})",
+        html=_html(
+            "You've been assigned a new complaint 🛠️",
+            [
+                f"Hi {assigned.get('name', 'there')},",
+                f"<strong>Ticket:</strong> {c['ticket_number']}",
+                f"<strong>Category:</strong> {c.get('category', '')}",
+                f"<strong>Location:</strong> {loc.get('building', '')}, Room {loc.get('room', '')}",
+                f"<strong>Description:</strong> {c.get('description', '')}",
+                "Please log in to the Authority Portal to <strong>Accept</strong> or "
+                "<strong>Reject</strong> this assignment. If you reject, a reason is required.",
+            ],
+            highlight=c["ticket_number"],
+            footer_note="Accepting notifies the student that work has begun.",
+        ),
+    )
+
+
+def send_accepted_to_student(c: dict) -> None:
+    """Notify the student that an authority accepted and work is underway.
+
+    This is the moment the student is told about the assignment — replacing the
+    old 'authority assigned' email that fired the instant an authority was picked.
+    """
     to = c.get("student_email", "")
     if not to:
         return
@@ -258,18 +296,58 @@ def send_authority_assigned(c: dict) -> None:
     authority_name = assigned.get("name", "the concerned department")
     enqueue_email(
         to=to,
-        subject=f"CampusFix — Authority Assigned ({c['ticket_number']})",
+        subject=f"CampusFix — Your Complaint is Being Worked On ({c['ticket_number']})",
         html=_html(
-            "An authority has been assigned to your complaint 👷",
+            "Good news — your complaint has been accepted 👷",
             [
-                f"Your complaint <strong>{c['ticket_number']}</strong> has been assigned to "
-                f"<strong>{authority_name}</strong>.",
-                "They will look into your reported issue and work on resolving it.",
+                f"Hi {to.split('@')[0].title()},",
+                f"<strong>{authority_name}</strong> has accepted your complaint "
+                f"<strong>{c['ticket_number']}</strong> and started working on it.",
+                "You'll be asked to confirm once they mark the issue as resolved.",
             ],
             highlight=c["ticket_number"],
-            footer_note="You will be notified once the issue is resolved.",
+            footer_note="You will be notified once the fix is ready to verify.",
         ),
     )
+
+
+def send_authority_rejected_to_notifications(
+    c: dict,
+    reason: str,
+    authority_name: str,
+    reassigned_to: str,
+    recipient_emails: list[str],
+) -> None:
+    """Alert the notification-email list that an authority rejected an assignment.
+
+    `recipient_emails` is passed in by the caller so this module stays free of DB
+    imports. `reassigned_to` is the next authority's name if the task cascaded, or
+    "" when the priority list is exhausted and an admin must re-assign manually.
+    """
+    if reassigned_to:
+        outcome = (f"It has been automatically re-assigned to the next authority in the "
+                   f"priority order: <strong>{reassigned_to}</strong>.")
+        footer = "No action needed unless that authority also rejects."
+    else:
+        outcome = ("There is no further authority in the priority order — this complaint is "
+                   "now <strong>awaiting manual re-assignment</strong> in the Admin Dashboard.")
+        footer = "Please log in to the Admin Dashboard to re-assign it."
+    for email in recipient_emails:
+        enqueue_email(
+            to=email,
+            subject=f"CampusFix — Assignment Rejected ({c['ticket_number']})",
+            html=_html(
+                "⚠️ An authority rejected an assignment",
+                [
+                    f"<strong>Ticket:</strong> {c['ticket_number']}",
+                    f"<strong>Category:</strong> {c.get('category', '')}",
+                    f"<strong>Rejected by:</strong> {authority_name}",
+                    f"<strong>Reason:</strong> {reason}",
+                    outcome,
+                ],
+                footer_note=footer,
+            ),
+        )
 
 
 def send_pending_acceptance(c: dict) -> None:

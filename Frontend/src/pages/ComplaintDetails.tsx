@@ -3,7 +3,7 @@ import { useParams, useNavigate } from 'react-router-dom';
 import {
   ArrowLeft, MapPin, Tag, Calendar, CheckCircle2, Clock, UserCheck,
   Loader2, Info, Ticket, Mail, Expand, X, ZoomIn, ZoomOut, Download,
-  RotateCcw, AlertTriangle, Star,
+  RotateCcw, AlertTriangle, Star, XCircle,
 } from 'lucide-react';
 import StatusBadge from '@/components/StatusBadge';
 import { getComplaintById, resolvePhotoUrl } from '@/services/api';
@@ -153,6 +153,16 @@ const ComplaintDetails = () => {
   const studentName  = currentUser.name || currentUser.email?.split('@')[0] || 'Student';
   const isOwner      = complaint && currentUser.email && complaint.student_email === currentUser.email;
 
+  // The detailed activity log (incl. internal reject reasons / cascade hops) is for
+  // staff only. Students keep the higher-level stepper and never see rejections.
+  const sessionActive = (k: string) => {
+    const s = localStorage.getItem(k);
+    if (!s) return false;
+    const exp = Number(s);
+    return !Number.isNaN(exp) && Date.now() < exp;
+  };
+  const isStaff = sessionActive('admin_session') || sessionActive('authority_session');
+
   useEffect(() => {
     if (!id) return;
     let active = true;
@@ -184,11 +194,17 @@ const ComplaintDetails = () => {
 
   const meta = CATEGORY_META[complaint.category] || CATEGORY_META[DEFAULT_CATEGORY];
 
-  // Map Reopened to its visual position in the timeline (same slot as Completed, shown differently)
+  // Map Reopened / Rejected to their visual position in the timeline (shown as a
+  // terminal node in the happy-path stepper; the full history lives in the Activity Log).
   const displaySteps = complaint.status === 'Reopened'
     ? [
         ...timelineSteps.slice(0, 4),
         { label: 'Reopened', desc: 'Student reopened the complaint', icon: RotateCcw },
+      ]
+    : complaint.status === 'Rejected'
+    ? [
+        ...timelineSteps.slice(0, 2),
+        { label: 'Rejected', desc: 'Authority rejected — awaiting re-assignment', icon: XCircle },
       ]
     : timelineSteps;
 
@@ -221,17 +237,21 @@ const ComplaintDetails = () => {
       case 'Assigned': {
         const authorityName = statusMeta['Assigned']?.authority_name || complaint.assignedTo?.name || '';
         const adminBy       = statusMeta['Assigned']?.admin_name     || complaint.assignedTo?.assigned_by || '';
+        const auto          = adminBy === 'Auto-assign';
+        if (authorityName && auto)    return `Auto-assigned to ${authorityName}`;
         if (authorityName && adminBy) return `Assigned to ${authorityName} by Admin — ${adminBy}`;
-        if (authorityName)           return `Assigned to ${authorityName}`;
-        if (adminBy)                 return `Assigned by Admin — ${adminBy}`;
+        if (authorityName)            return `Assigned to ${authorityName}`;
+        if (adminBy && !auto)         return `Assigned by Admin — ${adminBy}`;
         return null;
       }
       case 'In Progress': {
-        const name = complaint.assignedTo?.name || statusMeta['Assigned']?.authority_name || '';
-        return name ? `Being handled by ${name}` : null;
+        const name = statusMeta['In Progress']?.authority_name || complaint.assignedTo?.name || statusMeta['Assigned']?.authority_name || '';
+        return name ? `Accepted — being handled by ${name}` : 'Accepted by the authority';
       }
       case 'Pending Acceptance': {
-        const adminBy = statusMeta['Pending Acceptance']?.admin_name || '';
+        const authorityBy = statusMeta['Pending Acceptance']?.authority_name || '';
+        const adminBy     = statusMeta['Pending Acceptance']?.admin_name || '';
+        if (authorityBy) return `Marked resolved by ${authorityBy}`;
         return adminBy ? `Resolved by Admin — ${adminBy}` : 'Awaiting student confirmation';
       }
       case 'Completed': {
@@ -242,10 +262,54 @@ const ComplaintDetails = () => {
         const studentBy = statusMeta['Reopened']?.student_name || '';
         return studentBy ? `Reopened by ${studentBy}` : null;
       }
+      case 'Rejected':
+        // Kept neutral in the shared stepper — the who/why lives in the staff-only
+        // Activity Log, never surfaced to the student.
+        return 'Awaiting re-assignment by admin';
       default:
         return null;
     }
   };
+
+  // Full, un-deduped chronological history — the reject cascade can produce several
+  // Assigned/Rejected entries that the linear stepper above can't represent.
+  const activityIcon = (status: string) => ({
+    'Submitted': Clock,
+    'Assigned': UserCheck,
+    'In Progress': Loader2,
+    'Rejected': XCircle,
+    'Pending Acceptance': AlertTriangle,
+    'Completed': CheckCircle2,
+    'Reopened': RotateCcw,
+  }[status] ?? Info);
+
+  const activityText = (h: any): { title: string; detail?: string; reason?: string } => {
+    switch (h.status) {
+      case 'Submitted':
+        return { title: 'Complaint registered', detail: complaint.student_email ? `by ${complaint.student_email}` : undefined };
+      case 'Assigned': {
+        const auto = h.admin_name === 'Auto-assign';
+        return {
+          title: `Assigned to ${h.authority_name || 'an authority'}`,
+          detail: auto ? 'auto-assigned by priority' : h.admin_name ? `by Admin — ${h.admin_name}` : undefined,
+        };
+      }
+      case 'In Progress':
+        return { title: 'Assignment accepted', detail: h.authority_name ? `by ${h.authority_name}` : undefined };
+      case 'Rejected':
+        return { title: 'Assignment rejected', detail: h.authority_name ? `by ${h.authority_name}` : undefined, reason: h.reason };
+      case 'Pending Acceptance':
+        return { title: 'Marked as resolved', detail: h.authority_name ? `by ${h.authority_name}` : h.admin_name ? `by Admin — ${h.admin_name}` : undefined };
+      case 'Completed':
+        return { title: 'Fix accepted', detail: h.student_name ? `by ${h.student_name}` : undefined };
+      case 'Reopened':
+        return { title: 'Complaint reopened', detail: h.student_name ? `by ${h.student_name}` : undefined, reason: h.reason };
+      default:
+        return { title: h.status };
+    }
+  };
+
+  const history = complaint.status_history || [];
 
   return (
     <>
@@ -426,7 +490,7 @@ const ComplaintDetails = () => {
                         } ${isCurrent ? 'ring-4 ring-secondary/20 scale-110' : ''}`}>
                           <step.icon className="h-4 w-4" />
                         </div>
-                        {i < timelineSteps.length - 1 && (
+                        {i < displaySteps.length - 1 && (
                           <div className={`w-0.5 h-16 transition-colors ${isActive ? 'bg-primary/40' : 'bg-border'}`} />
                         )}
                       </div>
@@ -449,6 +513,34 @@ const ComplaintDetails = () => {
                 })}
               </div>
             </div>
+
+            {/* Activity Log — full chronological history (staff only; students see the stepper) */}
+            {isStaff && history.length > 0 && (
+              <div>
+                <h2 className="text-sm font-bold font-display text-foreground mb-4">Activity Log</h2>
+                <div className="space-y-3">
+                  {history.map((h: any, i: number) => {
+                    const Icon = activityIcon(h.status);
+                    const t = activityText(h);
+                    return (
+                      <div key={i} className="flex items-start gap-3">
+                        <div className="w-8 h-8 rounded-lg bg-muted flex items-center justify-center shrink-0 mt-0.5">
+                          <Icon className="h-3.5 w-3.5 text-muted-foreground" />
+                        </div>
+                        <div className="flex-1 min-w-0">
+                          <p className="text-sm font-medium text-foreground">
+                            {t.title}
+                            {t.detail && <span className="text-muted-foreground font-normal"> {t.detail}</span>}
+                          </p>
+                          {t.reason && <p className="text-xs text-rose-600 mt-0.5 italic">"{t.reason}"</p>}
+                          {h.timestamp && <p className="text-[11px] text-muted-foreground/70 mt-0.5">{fmtTimestamp(h.timestamp)}</p>}
+                        </div>
+                      </div>
+                    );
+                  })}
+                </div>
+              </div>
+            )}
           </div>
         </div>
       </div>

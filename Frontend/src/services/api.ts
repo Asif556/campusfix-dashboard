@@ -31,12 +31,14 @@ const API = axios.create({
 
 export const AUTH_TOKEN_KEY = 'auth_token';
 
-/** Clear every trace of a local session. */
+/** Clear every trace of a local session (all roles). */
 export const clearSession = () => {
   localStorage.removeItem(AUTH_TOKEN_KEY);
   localStorage.removeItem('student_user');
   localStorage.removeItem('admin_user');
   localStorage.removeItem('admin_session');
+  localStorage.removeItem('authority_user');
+  localStorage.removeItem('authority_session');
 };
 
 // Attach the bearer token (if logged in) to every outgoing request.
@@ -104,6 +106,17 @@ export const verifyOtp = async (email: string, otp: string) => {
 
 export const adminLogin = async (email: string, password: string) => {
   const res = await API.post('/auth/admin-login', { email, password });
+  return res.data;
+};
+
+// ── Authority auth (email OTP; only registered authority emails accepted) ──
+export const authoritySendOtp = async (email: string) => {
+  const res = await API.post('/auth/authority/send-otp', { email });
+  return res.data;
+};
+
+export const authorityVerifyOtp = async (email: string, otp: string) => {
+  const res = await API.post('/auth/authority/verify-otp', { email, otp });
   return res.data;
 };
 
@@ -181,6 +194,69 @@ export const acceptFix = async (complaintId: string, feedback: string, studentNa
 
 export const reopenComplaint = async (complaintId: string, reason: string, studentName: string, studentEmail: string) => {
   const res = await API.post(`/complaints/${complaintId}/reopen`, { reason, student_name: studentName, student_email: studentEmail });
+  return res.data;
+};
+
+// ── Authority work queue + actions ────────────────────────────────────────
+export const getAuthorityComplaints = async () => {
+  const res = await API.get('/authority/complaints');
+  return res.data;
+};
+
+export const authorityAccept = async (complaintId: string) => {
+  const res = await API.post(`/complaints/${complaintId}/authority-accept`, {});
+  return res.data;
+};
+
+export const authorityReject = async (complaintId: string, reason: string) => {
+  const res = await API.post(`/complaints/${complaintId}/authority-reject`, { reason });
+  return res.data;
+};
+
+export const authorityMarkDone = async (complaintId: string) => {
+  const res = await API.post(`/complaints/${complaintId}/authority-mark-done`, {});
+  return res.data;
+};
+
+// ── Per-category auto-assign + priority order ─────────────────────────────
+export interface CategorySettings {
+  category: string;
+  auto_assign: boolean;
+  priority_order: string[];
+}
+
+export const getCategorySettings = async (): Promise<CategorySettings[]> => {
+  const res = await API.get('/category-settings');
+  return res.data;
+};
+
+export const updateCategorySettings = async (
+  payload: { category: string; auto_assign?: boolean; priority_order?: string[] },
+) => {
+  const res = await API.put('/category-settings', payload);
+  return res.data;
+};
+
+// ── Admin notification-email recipients (alerted on authority rejection) ───
+export const getNotificationEmails = async () => {
+  const res = await API.get('/admin/notification-emails');
+  return res.data;
+};
+
+export const addNotificationEmail = async (email: string) => {
+  try {
+    const res = await API.post('/admin/notification-emails', { email });
+    return res.data;
+  } catch (err) {
+    if (axios.isAxiosError(err) && err.response?.data?.error) {
+      throw new Error(err.response.data.error);
+    }
+    throw err;
+  }
+};
+
+export const deleteNotificationEmail = async (id: string) => {
+  const res = await API.delete(`/admin/notification-emails/${id}`);
   return res.data;
 };
 

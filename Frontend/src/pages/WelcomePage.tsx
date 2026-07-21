@@ -63,13 +63,22 @@ const WelcomePage = () => {
           <img src="/assets/IEM.png" alt="IEM" className="h-9 w-9 object-contain drop-shadow-sm" />
           <span className="text-sm font-bold font-display text-gradient hidden sm:block">CampusFix</span>
         </div>
-        <button
-          onClick={() => navigate('/manager-login')}
-          className="flex items-center gap-1.5 text-xs font-medium text-muted-foreground hover:text-foreground transition-colors px-3 py-1.5 rounded-lg hover:bg-muted/60"
-        >
-          <Shield className="h-3.5 w-3.5" />
-          Admin Login
-        </button>
+        <div className="flex items-center gap-1">
+          <button
+            onClick={() => navigate('/authority-login')}
+            className="flex items-center gap-1.5 text-xs font-medium text-muted-foreground hover:text-foreground transition-colors px-3 py-1.5 rounded-lg hover:bg-muted/60"
+          >
+            <Wrench className="h-3.5 w-3.5" />
+            Authority Login
+          </button>
+          <button
+            onClick={() => navigate('/manager-login')}
+            className="flex items-center gap-1.5 text-xs font-medium text-muted-foreground hover:text-foreground transition-colors px-3 py-1.5 rounded-lg hover:bg-muted/60"
+          >
+            <Shield className="h-3.5 w-3.5" />
+            Admin Login
+          </button>
+        </div>
       </div>
 
       {/* Hero */}

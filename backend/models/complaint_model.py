@@ -22,6 +22,9 @@ def create_complaint_doc(data):
         "photo_url": data.get("photo_url", ""),
         "status": "Submitted",
         "status_history": [{"status": "Submitted", "timestamp": now}],
+        # Authorities who have rejected this complaint in the current round; the
+        # reject cascade skips them. Reset to [] on any manual (re)assignment.
+        "rejected_authority_ids": [],
         "created_at": now,
         "updated_at": now,
     }

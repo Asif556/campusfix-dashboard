@@ -12,6 +12,7 @@ const statusConfig: Record<string, { bg: string; text: string; dot: string; ring
   'Completed': { bg: 'bg-status-completed/10', text: 'text-status-completed', dot: 'bg-status-completed', ring: 'ring-status-completed/20' },
   'Pending Acceptance': { bg: 'bg-amber-500/10', text: 'text-amber-600', dot: 'bg-amber-500 animate-pulse', ring: 'ring-amber-500/20' },
   'Reopened': { bg: 'bg-red-500/10', text: 'text-red-600', dot: 'bg-red-500', ring: 'ring-red-500/20' },
+  'Rejected': { bg: 'bg-rose-500/10', text: 'text-rose-600', dot: 'bg-rose-500', ring: 'ring-rose-500/20' },
 };
 
 const StatusBadge = ({ status, className }: StatusBadgeProps) => {

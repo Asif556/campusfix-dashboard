@@ -19,12 +19,22 @@ _serializer = URLSafeTimedSerializer(SECRET_KEY, salt="campusfix-auth")
 
 
 def generate_token(user: dict) -> str:
-    """Create a signed token embedding the user's identity."""
-    return _serializer.dumps({
+    """Create a signed token embedding the user's identity.
+
+    Authority tokens additionally carry `authority_id` and `category`, so
+    authority-scoped routes derive both *who* and *which domain* from the signed
+    token rather than any spoofable request field.
+    """
+    payload = {
         "email": (user.get("email") or "").strip().lower(),
         "role":  user.get("role") or "student",
         "name":  user.get("name") or "",
-    })
+    }
+    if user.get("authority_id"):
+        payload["authority_id"] = str(user["authority_id"])
+    if user.get("category"):
+        payload["category"] = user["category"]
+    return _serializer.dumps(payload)
 
 
 def verify_token(token: str):
@@ -63,6 +73,24 @@ def require_admin(fn):
             return jsonify({"error": "Authentication required"}), 401
         if identity.get("role") != "admin":
             return jsonify({"error": "Admin privileges required"}), 403
+        g.user = identity
+        return fn(*args, **kwargs)
+    return wrapper
+
+
+def require_authority(fn):
+    """Reject the request unless it carries a valid *authority* token. Sets g.user.
+
+    Also requires an `authority_id` in the token so downstream routes can scope
+    every action to the caller's own assignments.
+    """
+    @functools.wraps(fn)
+    def wrapper(*args, **kwargs):
+        identity = _identity_from_request()
+        if not identity:
+            return jsonify({"error": "Authentication required"}), 401
+        if identity.get("role") != "authority" or not identity.get("authority_id"):
+            return jsonify({"error": "Authority privileges required"}), 403
         g.user = identity
         return fn(*args, **kwargs)
     return wrapper

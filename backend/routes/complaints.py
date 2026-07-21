@@ -5,14 +5,21 @@ from bson import ObjectId
 from datetime import datetime, timezone
 from werkzeug.utils import secure_filename
 
-from db import complaints_collection
+from db import (
+    complaints_collection,
+    authorities_collection,
+    notification_emails_collection,
+)
 from models.complaint_model import create_complaint_doc
-from utils.auth import require_auth, require_admin
+from utils.auth import require_auth, require_admin, require_authority
+from utils.assignment import effective_order, next_authority, is_auto_assign
 from utils.helpers import serialize_complaint, is_valid_object_id, _fmt_ts
 from utils.email_queue import (
     send_complaint_raised_to_student,
     send_complaint_raised_to_admins,
-    send_authority_assigned,
+    send_assignment_to_authority,
+    send_accepted_to_student,
+    send_authority_rejected_to_notifications,
     send_pending_acceptance,
     send_fix_accepted_to_admins,
     send_reopened_to_admins,
@@ -41,6 +48,86 @@ ALLOWED_TRANSITIONS = {
     "Reopened":           {"Assigned", "In Progress", "Pending Acceptance"},
     "Completed":          set(),
 }
+
+# Statuses from which an admin may (re)assign an authority. Deliberately excludes
+# "Pending Acceptance" and "Completed" — a fix that's awaiting the student or already
+# closed must not be silently re-routed to a new authority.
+ASSIGNABLE_STATUSES = {"Submitted", "Reopened", "Rejected", "Assigned", "In Progress"}
+
+
+# ── Assignment helpers ────────────────────────────────────────────────────────
+
+def _build_assignment(authority: dict, assigned_by: str, now) -> dict:
+    """The `assigned_to` sub-document stored on a complaint for its current assignee."""
+    return {
+        "authority_id": str(authority["_id"]),
+        "name":         authority.get("name", ""),
+        "email":        authority.get("email", ""),
+        "phone":        authority.get("phone", ""),
+        "category":     authority.get("category", ""),
+        "assigned_at":  now,
+        "assigned_by":  assigned_by,
+    }
+
+
+def _assignment_history_entry(authority: dict, assigned_by: str, now) -> dict:
+    """A status_history entry recording an assignment hop.
+
+    `assigned_by` is an admin's name for manual assigns, or "Auto-assign" for the
+    auto-assign-on-create and reject-cascade paths.
+    """
+    return {
+        "status":         "Assigned",
+        "timestamp":      now,
+        "authority_name": authority.get("name", ""),
+        "admin_name":     assigned_by,
+    }
+
+
+def _notify_assignment(complaint_id) -> None:
+    """Email + SMS the complaint's current assignee that they have a task to action."""
+    doc = complaints_collection.find_one({"_id": ObjectId(complaint_id)})
+    if not doc:
+        return
+    c = serialize_complaint(doc)
+    send_assignment_to_authority(c)
+    assigned = doc.get("assigned_to") or {}
+    send_sms_assignment(
+        authority_phone=assigned.get("phone", ""),
+        authority_name=assigned.get("name", ""),
+        ticket_number=c["ticket_number"],
+        category=c["category"],
+        location=c["location"],
+        assigned_by=assigned.get("assigned_by", "Admin"),
+    )
+
+
+def _assign_to_authority(complaint_id, authority, assigned_by, reset_reject_round, expected_statuses=None):
+    """Assign `complaint_id` to `authority` (fresh assignment path: manual + auto-create).
+
+    Atomic and optionally guarded by `expected_statuses`. Returns the stored
+    `assigned_to` sub-document on success, or None if the guard didn't match.
+    The reject cascade does NOT use this — it needs the rejection and the reassign
+    in a single update (see authority_reject).
+    """
+    now = datetime.now(timezone.utc)
+    assigned_to = _build_assignment(authority, assigned_by, now)
+    set_fields = {"status": "Assigned", "assigned_to": assigned_to, "updated_at": now}
+    if reset_reject_round:
+        set_fields["rejected_authority_ids"] = []
+
+    filt = {"_id": ObjectId(complaint_id)}
+    if expected_statuses is not None:
+        filt["status"] = {"$in": list(expected_statuses)}
+
+    result = complaints_collection.update_one(filt, {
+        "$set": set_fields,
+        "$push": {"status_history": _assignment_history_entry(authority, assigned_by, now)},
+    })
+    if result.matched_count == 0:
+        return None
+    _notify_assignment(complaint_id)
+    return assigned_to
 
 
 @complaints_bp.route("/complaints", methods=["POST"])
@@ -80,6 +167,17 @@ def create_complaint():
         c = serialize_complaint(doc)
         send_complaint_raised_to_student(c)
         send_complaint_raised_to_admins(c)
+
+        # Auto-assign to the top-priority authority if this category is configured
+        # for it. Emails the authority (accept/reject) — the student is NOT notified
+        # here; they only hear back once an authority accepts.
+        if is_auto_assign(doc["category"]):
+            order = effective_order(doc["category"])
+            if order:
+                _assign_to_authority(
+                    result.inserted_id, order[0], "Auto-assign",
+                    reset_reject_round=True, expected_statuses={"Submitted"},
+                )
 
         return jsonify({
             "success": True,
@@ -124,8 +222,16 @@ def get_complaint(complaint_id):
     if not doc:
         return jsonify({"error": "Complaint not found"}), 404
 
-    if g.user["role"] != "admin" and doc.get("student_email", "").lower() != g.user["email"]:
-        return jsonify({"error": "Forbidden"}), 403
+    role = g.user["role"]
+    if role == "admin":
+        pass  # admins see everything
+    elif role == "authority":
+        # An authority may view a ticket currently assigned to them.
+        if (doc.get("assigned_to") or {}).get("authority_id") != g.user.get("authority_id"):
+            return jsonify({"error": "Forbidden"}), 403
+    else:
+        if doc.get("student_email", "").lower() != g.user["email"]:
+            return jsonify({"error": "Forbidden"}), 403
 
     return jsonify(serialize_complaint(doc)), 200
 
@@ -182,7 +288,12 @@ def update_status(complaint_id):
 @complaints_bp.route("/complaints/<complaint_id>/assign", methods=["POST"])
 @require_admin
 def assign_complaint(complaint_id):
-    """Assign a complaint to an authority and set status to Assigned (admin only)."""
+    """(Re)assign a complaint to an authority and request their acceptance (admin only).
+
+    Sets status to "Assigned" and emails the authority to Accept/Reject. The student
+    is NOT emailed here — they're notified only when an authority accepts. Resets the
+    reject round so a fresh admin assignment isn't short-circuited by earlier rejections.
+    """
     if not is_valid_object_id(complaint_id):
         return jsonify({"error": "Invalid complaint ID"}), 400
 
@@ -193,58 +304,185 @@ def assign_complaint(complaint_id):
     if not is_valid_object_id(authority_id):
         return jsonify({"error": "Valid authority_id required"}), 400
 
-    from db import authorities_collection
     authority = authorities_collection.find_one({"_id": ObjectId(authority_id)})
     if not authority:
         return jsonify({"error": "Authority not found"}), 404
 
-    now = datetime.now(timezone.utc)
-    assigned_to = {
-        "authority_id": str(authority["_id"]),
-        "name": authority.get("name", ""),
-        "email": authority.get("email", ""),
-        "phone": authority.get("phone", ""),
-        "category": authority.get("category", ""),
-        "assigned_at": now,
-        "assigned_by": admin_name,
-    }
-
-    result = complaints_collection.update_one(
-        {"_id": ObjectId(complaint_id)},
-        {
-            "$set": {"status": "Assigned", "assigned_to": assigned_to, "updated_at": now},
-            "$push": {"status_history": {
-                "status": "Assigned",
-                "timestamp": now,
-                "authority_name": authority.get("name", ""),
-                "admin_name": admin_name,
-            }},
-        },
+    assigned_to = _assign_to_authority(
+        complaint_id, authority, admin_name,
+        reset_reject_round=True, expected_statuses=ASSIGNABLE_STATUSES,
     )
-    if result.matched_count == 0:
-        return jsonify({"error": "Complaint not found"}), 404
-
-    # Email student and SMS authority about assignment
-    doc = complaints_collection.find_one({"_id": ObjectId(complaint_id)})
-    if doc:
-        c = serialize_complaint(doc)
-        send_authority_assigned(c)
-        send_sms_assignment(
-            authority_phone=authority.get("phone", ""),
-            authority_name=authority.get("name", ""),
-            ticket_number=c["ticket_number"],
-            category=c["category"],
-            location=c["location"],
-            assigned_by=admin_name,
-        )
+    if assigned_to is None:
+        return jsonify({"error": "This complaint can no longer be assigned in its current state."}), 409
 
     return jsonify({
         "success": True,
         "assigned_to": {
             **{k: v for k, v in assigned_to.items() if k != "assigned_at"},
-            "assigned_at": _fmt_ts(now),
+            "assigned_at": _fmt_ts(assigned_to["assigned_at"]),
         },
     }), 200
+
+
+@complaints_bp.route("/authority/complaints", methods=["GET"])
+@require_authority
+def authority_complaints():
+    """Return the calling authority's work queue: complaints currently theirs.
+
+    Scoped to the token's authority_id and to active statuses, so a rejecter's
+    exhausted (now "Rejected") ticket doesn't linger in their list.
+    """
+    docs = complaints_collection.find({
+        "assigned_to.authority_id": g.user["authority_id"],
+        "status": {"$in": ["Assigned", "In Progress", "Pending Acceptance"]},
+    }).sort("updated_at", -1)
+    return jsonify([serialize_complaint(d) for d in docs]), 200
+
+
+@complaints_bp.route("/complaints/<complaint_id>/authority-accept", methods=["POST"])
+@require_authority
+def authority_accept(complaint_id):
+    """Authority accepts an assignment → In Progress. Notifies the student."""
+    if not is_valid_object_id(complaint_id):
+        return jsonify({"error": "Invalid complaint ID"}), 400
+
+    authority_id   = g.user["authority_id"]
+    authority_name = g.user.get("name") or "Authority"
+    now = datetime.now(timezone.utc)
+
+    # Guarded on status AND "assigned to me" — only the current assignee can accept.
+    result = complaints_collection.update_one(
+        {"_id": ObjectId(complaint_id), "status": "Assigned", "assigned_to.authority_id": authority_id},
+        {
+            "$set": {"status": "In Progress", "updated_at": now},
+            "$push": {"status_history": {
+                "status": "In Progress",
+                "timestamp": now,
+                "authority_name": authority_name,
+            }},
+        },
+    )
+    if result.matched_count == 0:
+        return jsonify({"error": "This task is not awaiting your acceptance."}), 409
+
+    doc = complaints_collection.find_one({"_id": ObjectId(complaint_id)})
+    if doc:
+        send_accepted_to_student(serialize_complaint(doc))
+
+    return jsonify({"success": True, "message": "Assignment accepted."}), 200
+
+
+@complaints_bp.route("/complaints/<complaint_id>/authority-reject", methods=["POST"])
+@require_authority
+def authority_reject(complaint_id):
+    """Authority rejects an assignment (reason required).
+
+    Cascades to the next authority in the category's priority order if one remains
+    (they get the assignment email); otherwise the complaint becomes "Rejected" and
+    awaits manual admin re-assignment. The rejection and the reassign are a single
+    atomic update. The student is never emailed; the notification list always is.
+    """
+    if not is_valid_object_id(complaint_id):
+        return jsonify({"error": "Invalid complaint ID"}), 400
+
+    data   = request.get_json(silent=True) or {}
+    reason = data.get("reason", "").strip()
+    if not reason:
+        return jsonify({"error": "A reason is required to reject an assignment."}), 400
+
+    authority_id   = g.user["authority_id"]
+    authority_name = g.user.get("name") or "Authority"
+
+    doc = complaints_collection.find_one({"_id": ObjectId(complaint_id)})
+    if not doc:
+        return jsonify({"error": "Complaint not found"}), 404
+    if doc.get("status") != "Assigned" or (doc.get("assigned_to") or {}).get("authority_id") != authority_id:
+        return jsonify({"error": "This task is not awaiting your acceptance."}), 409
+
+    category = doc.get("category", "")
+    exclude  = set(doc.get("rejected_authority_ids", [])) | {authority_id}
+    nxt      = next_authority(category, exclude)
+
+    now = datetime.now(timezone.utc)
+    reject_entry = {
+        "status":         "Rejected",
+        "timestamp":      now,
+        "authority_name": authority_name,
+        "reason":         reason,
+    }
+    # Filter guards both the status and "still assigned to me" — closes the race
+    # against a concurrent admin reassign / another action on this ticket.
+    guard = {"_id": ObjectId(complaint_id), "status": "Assigned", "assigned_to.authority_id": authority_id}
+
+    if nxt:
+        assign_entry = _assignment_history_entry(nxt, "Auto-assign", now)
+        result = complaints_collection.update_one(guard, {
+            "$set": {
+                "status":      "Assigned",
+                "assigned_to": _build_assignment(nxt, "Auto-assign", now),
+                "updated_at":  now,
+            },
+            "$push":     {"status_history": {"$each": [reject_entry, assign_entry]}},
+            "$addToSet": {"rejected_authority_ids": authority_id},
+        })
+    else:
+        result = complaints_collection.update_one(guard, {
+            "$set":      {"status": "Rejected", "updated_at": now},
+            "$push":     {"status_history": reject_entry},
+            "$addToSet": {"rejected_authority_ids": authority_id},
+        })
+
+    if result.matched_count == 0:
+        return jsonify({"error": "This task is not awaiting your acceptance."}), 409
+
+    reassigned_name = ""
+    if nxt:
+        _notify_assignment(complaint_id)          # email + SMS the next authority
+        reassigned_name = nxt.get("name", "")
+
+    fresh = complaints_collection.find_one({"_id": ObjectId(complaint_id)})
+    recipients = [d["email"] for d in notification_emails_collection.find() if d.get("email")]
+    if fresh and recipients:
+        send_authority_rejected_to_notifications(
+            serialize_complaint(fresh), reason, authority_name, reassigned_name, recipients,
+        )
+
+    msg = (f"Assignment rejected. Re-assigned to {reassigned_name}."
+           if reassigned_name else
+           "Assignment rejected. Awaiting admin re-assignment.")
+    return jsonify({"success": True, "message": msg, "reassigned_to": reassigned_name}), 200
+
+
+@complaints_bp.route("/complaints/<complaint_id>/authority-mark-done", methods=["POST"])
+@require_authority
+def authority_mark_done(complaint_id):
+    """Authority marks their accepted task as done → Pending Acceptance. Notifies the student."""
+    if not is_valid_object_id(complaint_id):
+        return jsonify({"error": "Invalid complaint ID"}), 400
+
+    authority_id   = g.user["authority_id"]
+    authority_name = g.user.get("name") or "Authority"
+    now = datetime.now(timezone.utc)
+
+    result = complaints_collection.update_one(
+        {"_id": ObjectId(complaint_id), "status": "In Progress", "assigned_to.authority_id": authority_id},
+        {
+            "$set": {"status": "Pending Acceptance", "updated_at": now},
+            "$push": {"status_history": {
+                "status": "Pending Acceptance",
+                "timestamp": now,
+                "authority_name": authority_name,
+            }},
+        },
+    )
+    if result.matched_count == 0:
+        return jsonify({"error": "This task is not currently in progress under your account."}), 409
+
+    doc = complaints_collection.find_one({"_id": ObjectId(complaint_id)})
+    if doc:
+        send_pending_acceptance(serialize_complaint(doc))
+
+    return jsonify({"success": True, "message": "Marked as done. Awaiting student confirmation."}), 200
 
 
 @complaints_bp.route("/complaints/<complaint_id>/accept", methods=["POST"])

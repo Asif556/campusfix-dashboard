@@ -49,6 +49,10 @@ yarn-error.log*
 pnpm-debug.log*
 .pnpm-store/
 
+# The generic "lib/" rule in the Python section above also matches the frontend
+# source dir Frontend/src/lib/ — force it back in so constants.ts / storage.ts track.
+!Frontend/src/lib/
+
 # ========================
 # Build outputs
 # ========================
