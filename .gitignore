@@ -53,6 +53,11 @@ pnpm-debug.log*
 # source dir Frontend/src/lib/ — force it back in so constants.ts / storage.ts track.
 !Frontend/src/lib/
 
+# Same trap for the Flutter app: "lib/" would hide the entire mobile/lib/ source
+# tree. Re-include the directory and everything under it.
+!mobile/lib/
+!mobile/lib/**
+
 # ========================
 # Build outputs
 # ========================
