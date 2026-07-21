@@ -1,6 +1,7 @@
 import { MapPin, Calendar, ChevronRight } from 'lucide-react';
 import StatusBadge from './StatusBadge';
 import { useNavigate } from 'react-router-dom';
+import { resolvePhotoUrl } from '@/services/api';
 
 interface ComplaintCardProps {
   complaint: {
@@ -34,7 +35,7 @@ const ComplaintCard = ({ complaint }: ComplaintCardProps) => {
     >
       {complaint.photo ? (
         <div className="h-36 overflow-hidden">
-          <img src={complaint.photo} alt={complaint.category} className="w-full h-full object-cover group-hover:scale-105 transition-transform duration-500" />
+          <img src={resolvePhotoUrl(complaint.photo) ?? undefined} alt={complaint.category} className="w-full h-full object-cover group-hover:scale-105 transition-transform duration-500" />
         </div>
       ) : (
         <div className={`h-2 bg-gradient-to-r ${config.gradient}`} />
@@ -50,7 +51,7 @@ const ComplaintCard = ({ complaint }: ComplaintCardProps) => {
               <h3 className="font-semibold font-display text-card-foreground">{complaint.category}</h3>
               <div className="flex items-center gap-1 text-xs text-muted-foreground mt-0.5">
                 <MapPin className="h-3 w-3" />
-                <span>{complaint.location.building}, {complaint.location.room}</span>
+                <span>{complaint.location?.building}, {complaint.location?.room}</span>
               </div>
             </div>
           </div>

@@ -18,6 +18,10 @@ const ManagerLogin = () => {
     setLoading(true);
     try {
       const res = await adminLogin(email, password);
+      if (!res?.user) {
+        toast.error('Login failed — unexpected server response');
+        return;
+      }
       localStorage.setItem(SESSION_KEY, String(Date.now() + SESSION_DURATION));
       localStorage.setItem('admin_user', JSON.stringify(res.user));
       toast.success('Welcome, Admin!');

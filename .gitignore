@@ -1,7 +1,12 @@
 # ========================
 # Environment & Secrets
 # ========================
-
+.env
+*.env
+.env.*
+!.env.example
+# backend/.env is intentionally kept in the repo (by request)
+!backend/.env
 
 # ========================
 # Python / Backend

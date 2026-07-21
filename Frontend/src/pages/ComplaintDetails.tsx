@@ -6,13 +6,15 @@ import {
   RotateCcw, AlertTriangle, Star,
 } from 'lucide-react';
 import StatusBadge from '@/components/StatusBadge';
-import { getComplaintById } from '@/services/api';
+import { getComplaintById, resolvePhotoUrl } from '@/services/api';
+import { getStoredJSON } from '@/lib/storage';
 import { AcceptFeedbackModal, ReopenModal } from '@/components/AcceptReopenModals';
 import { toast } from 'sonner';
 
 const timelineSteps = [
   { label: 'Submitted',          desc: 'Complaint registered',          icon: Clock },
   { label: 'Assigned',           desc: 'Department assigned',            icon: UserCheck },
+  { label: 'In Progress',        desc: 'Being worked on',               icon: Loader2 },
   { label: 'Pending Acceptance', desc: 'Fix ready — awaiting student',   icon: AlertTriangle },
   { label: 'Completed',          desc: 'Issue resolved & accepted',      icon: CheckCircle2 },
 ];
@@ -150,17 +152,37 @@ const ComplaintDetails = () => {
   const { id } = useParams();
   const navigate = useNavigate();
   const [complaint, setComplaint] = useState<any>(null);
+  const [loadError, setLoadError] = useState(false);
   const [lightbox, setLightbox]   = useState(false);
   const [accepting, setAccepting] = useState(false);
   const [reopening, setReopening] = useState(false);
 
-  const currentUser  = JSON.parse(localStorage.getItem('student_user') || '{}');
+  const currentUser  = getStoredJSON<{ name?: string; email?: string }>('student_user') ?? {};
   const studentName  = currentUser.name || currentUser.email?.split('@')[0] || 'Student';
   const isOwner      = complaint && currentUser.email && complaint.student_email === currentUser.email;
 
   useEffect(() => {
-    if (id) getComplaintById(id).then(setComplaint);
+    if (!id) return;
+    let active = true;
+    setLoadError(false);
+    getComplaintById(id)
+      .then(data => { if (active) setComplaint(data); })
+      .catch(() => { if (active) setLoadError(true); });
+    return () => { active = false; };
   }, [id]);
+
+  if (loadError) return (
+    <div className="flex flex-col items-center justify-center h-64 gap-4 text-center">
+      <AlertTriangle className="h-8 w-8 text-destructive" />
+      <div>
+        <p className="text-sm font-semibold text-foreground">Couldn't load this complaint</p>
+        <p className="text-xs text-muted-foreground mt-1">It may have been removed, or the server is unreachable.</p>
+      </div>
+      <button onClick={() => navigate(-1)} className="text-sm font-medium text-primary hover:underline">
+        Go back
+      </button>
+    </div>
+  );
 
   if (!complaint) return (
     <div className="flex items-center justify-center h-64">
@@ -173,7 +195,7 @@ const ComplaintDetails = () => {
   // Map Reopened to its visual position in the timeline (same slot as Completed, shown differently)
   const displaySteps = complaint.status === 'Reopened'
     ? [
-        ...timelineSteps.slice(0, 3),
+        ...timelineSteps.slice(0, 4),
         { label: 'Reopened', desc: 'Student reopened the complaint', icon: RotateCcw },
       ]
     : timelineSteps;
@@ -237,7 +259,7 @@ const ComplaintDetails = () => {
     <>
       {lightbox && complaint.photo && (
         <ImageLightbox
-          src={complaint.photo}
+          src={resolvePhotoUrl(complaint.photo) ?? ''}
           alt={complaint.category}
           onClose={() => setLightbox(false)}
         />
@@ -268,7 +290,7 @@ const ComplaintDetails = () => {
           {/* Hero banner */}
           {complaint.photo ? (
             <div className="relative h-56 overflow-hidden group cursor-pointer" onClick={() => setLightbox(true)}>
-              <img src={complaint.photo} alt={complaint.category} className="w-full h-full object-cover transition-transform duration-500 group-hover:scale-105" />
+              <img src={resolvePhotoUrl(complaint.photo) ?? undefined} alt={complaint.category} className="w-full h-full object-cover transition-transform duration-500 group-hover:scale-105" />
               <div className="absolute inset-0 bg-gradient-to-t from-black/40 to-transparent" />
               {/* Expand hint overlay */}
               <div className="absolute inset-0 flex items-center justify-center opacity-0 group-hover:opacity-100 transition-opacity duration-300">
@@ -311,7 +333,7 @@ const ComplaintDetails = () => {
               <div className="flex flex-wrap gap-4 mt-3 text-sm text-muted-foreground">
                 <span className="flex items-center gap-1.5">
                   <MapPin className="h-4 w-4 text-primary/60" />
-                  {complaint.location.building}, {complaint.location.floor}, {complaint.location.room}
+                  {complaint.location?.building}, {complaint.location?.floor}, {complaint.location?.room}
                 </span>
                 <span className="flex items-center gap-1.5">
                   <Calendar className="h-4 w-4 text-primary/60" />

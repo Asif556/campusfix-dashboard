@@ -17,6 +17,7 @@ import {
 } from '@/services/api';
 import { toast } from 'sonner';
 import { useNavigate } from 'react-router-dom';
+import { getStoredJSON } from '@/lib/storage';
 import * as XLSX from 'xlsx';
 
 const SESSION_KEY = 'admin_session';
@@ -321,9 +322,10 @@ const AdminDashboard = () => {
   const [exportTo, setExportTo]     = useState('');
   const [assigning, setAssigning]   = useState<any | null>(null);
   const [showManage, setShowManage] = useState(false);
+  const [loading, setLoading]       = useState(true);
   const navigate = useNavigate();
 
-  const adminUser  = JSON.parse(localStorage.getItem('admin_user') || 'null');
+  const adminUser  = getStoredJSON<{ name?: string; email?: string }>('admin_user');
   const adminName  = adminUser?.name ?? 'Admin';
 
   const handleExport = () => {
@@ -383,7 +385,11 @@ const AdminDashboard = () => {
   };
 
   useEffect(() => {
-    getAdminComplaints().then(setComplaints);
+    setLoading(true);
+    getAdminComplaints()
+      .then(setComplaints)
+      .catch(() => toast.error('Failed to load complaints'))
+      .finally(() => setLoading(false));
     getRecurringComplaints().then(setRecurring).catch(() => {});
   }, []);
 
@@ -656,7 +662,7 @@ const AdminDashboard = () => {
 
                   {/* Location */}
                   <td className="px-5 py-4 text-muted-foreground hidden sm:table-cell">
-                    {c.location.building}, {c.location.room}
+                    {c.location?.building}, {c.location?.room}
                   </td>
 
                   {/* Raised By */}
@@ -736,7 +742,7 @@ const AdminDashboard = () => {
               {paginated.length === 0 && (
                 <tr>
                   <td colSpan={7} className="px-5 py-12 text-center text-muted-foreground text-sm">
-                    No complaints found.
+                    {loading ? 'Loading complaints…' : 'No complaints found.'}
                   </td>
                 </tr>
               )}

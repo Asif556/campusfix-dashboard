@@ -58,6 +58,10 @@ const StudentLogin = () => {
     setVerifying(true);
     try {
       const res = await verifyOtp(email.toLowerCase(), otp.trim());
+      if (!res?.user) {
+        toast.error('Login failed — unexpected server response');
+        return;
+      }
       localStorage.setItem('student_user', JSON.stringify(res.user));
       toast.success(`Welcome back, ${res.user.name || res.user.email}!`);
       navigate('/');

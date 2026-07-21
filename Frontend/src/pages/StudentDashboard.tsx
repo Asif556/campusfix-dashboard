@@ -3,6 +3,7 @@ import { Link } from 'react-router-dom';
 import { FileWarning, ListChecks, History, AlertCircle, Clock, CheckCircle2, TrendingUp, ArrowRight, Zap, Bell, CheckCircle, RotateCcw, Ticket } from 'lucide-react';
 import DashboardCard from '@/components/DashboardCard';
 import { getDashboardStats, getComplaints } from '@/services/api';
+import { getStoredJSON } from '@/lib/storage';
 import { AcceptFeedbackModal, ReopenModal } from '@/components/AcceptReopenModals';
 
 const StudentDashboard = () => {
@@ -11,14 +12,16 @@ const StudentDashboard = () => {
   const [accepting, setAccepting] = useState<any | null>(null);
   const [reopening, setReopening] = useState<any | null>(null);
 
-  const user = JSON.parse(localStorage.getItem('student_user') || '{}');
+  const user = getStoredJSON<{ name?: string; email?: string }>('student_user') ?? {};
   const studentName = user.name || user.email?.split('@')[0] || 'Student';
 
   useEffect(() => {
-    getDashboardStats(user.email).then(setStats);
-    getComplaints(user.email).then(all => {
-      setPendingAcceptance(all.filter((c: any) => c.status === 'Pending Acceptance'));
-    });
+    if (!user.email) return;
+    getDashboardStats(user.email).then(setStats).catch(() => {});
+    getComplaints(user.email)
+      .then(all => setPendingAcceptance(all.filter((c: any) => c.status === 'Pending Acceptance')))
+      .catch(() => {});
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
   const handleActionDone = (id: string) => {

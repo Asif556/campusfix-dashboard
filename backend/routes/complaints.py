@@ -7,7 +7,7 @@ from werkzeug.utils import secure_filename
 
 from db import complaints_collection
 from models.complaint_model import create_complaint_doc
-from utils.helpers import serialize_complaint, is_valid_object_id
+from utils.helpers import serialize_complaint, is_valid_object_id, _fmt_ts
 from utils.email_queue import (
     send_complaint_raised_to_student,
     send_complaint_raised_to_admins,
@@ -44,6 +44,18 @@ def _is_admin_email(email: str) -> bool:
 complaints_bp = Blueprint("complaints", __name__)
 
 ALLOWED_STATUSES = {"Submitted", "Assigned", "In Progress", "Completed", "Pending Acceptance", "Reopened"}
+
+# Permitted admin-driven status transitions. Assignment (-> Assigned), student
+# acceptance (-> Completed) and reopening (-> Reopened) have their own endpoints,
+# so "Completed" is intentionally never a valid target here.
+ALLOWED_TRANSITIONS = {
+    "Submitted":          {"Assigned", "In Progress"},
+    "Assigned":           {"In Progress", "Pending Acceptance"},
+    "In Progress":        {"Pending Acceptance"},
+    "Pending Acceptance": {"In Progress"},
+    "Reopened":           {"Assigned", "In Progress", "Pending Acceptance"},
+    "Completed":          set(),
+}
 
 
 @complaints_bp.route("/complaints", methods=["POST"])
@@ -137,21 +149,28 @@ def update_status(complaint_id):
     if new_status not in ALLOWED_STATUSES:
         return jsonify({"error": f"Invalid status. Allowed: {', '.join(ALLOWED_STATUSES)}"}), 400
 
+    doc = complaints_collection.find_one({"_id": ObjectId(complaint_id)})
+    if not doc:
+        return jsonify({"error": "Complaint not found"}), 404
+
+    current_status = doc.get("status", "Submitted")
+    if new_status != current_status and new_status not in ALLOWED_TRANSITIONS.get(current_status, set()):
+        return jsonify({
+            "error": f"Cannot change status from '{current_status}' to '{new_status}'."
+        }), 409
+
     now = datetime.now(timezone.utc)
     history_entry = {"status": new_status, "timestamp": now}
     if admin_name:
         history_entry["admin_name"] = admin_name
 
-    result = complaints_collection.update_one(
+    complaints_collection.update_one(
         {"_id": ObjectId(complaint_id)},
         {
             "$set": {"status": new_status, "updated_at": now},
             "$push": {"status_history": history_entry},
         },
     )
-
-    if result.matched_count == 0:
-        return jsonify({"error": "Complaint not found"}), 404
 
     # Send student email when admin marks pending acceptance
     if new_status == "Pending Acceptance":
@@ -224,7 +243,7 @@ def assign_complaint(complaint_id):
         "success": True,
         "assigned_to": {
             **{k: v for k, v in assigned_to.items() if k != "assigned_at"},
-            "assigned_at": now.isoformat() + "+00:00",
+            "assigned_at": _fmt_ts(now),
         },
     }), 200
 

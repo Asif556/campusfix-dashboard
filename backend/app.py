@@ -3,7 +3,7 @@ from dotenv import load_dotenv
 
 load_dotenv()
 
-from flask import Flask, send_from_directory
+from flask import Flask, send_from_directory, jsonify
 from flask_cors import CORS
 
 import utils.email_queue  # noqa: F401 — starts background email worker thread
@@ -18,7 +18,14 @@ os.makedirs(UPLOAD_FOLDER, exist_ok=True)
 
 app = Flask(__name__)
 app.config["UPLOAD_FOLDER"] = UPLOAD_FOLDER
+# Cap request bodies (incl. uploads) at 5 MB to prevent memory-exhaustion DoS.
+app.config["MAX_CONTENT_LENGTH"] = 5 * 1024 * 1024
 CORS(app, resources={r"/campusfix/api/*": {"origins": "*"}})
+
+
+@app.errorhandler(413)
+def payload_too_large(_e):
+    return jsonify({"error": "File too large. Maximum upload size is 5 MB."}), 413
 
 # Register blueprints under /campusfix/api prefix
 app.register_blueprint(complaints_bp, url_prefix="/campusfix/api")

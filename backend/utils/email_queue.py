@@ -76,7 +76,6 @@ def enqueue_email(to: str, subject: str, html: str) -> None:
     """Non-blocking — push email job onto the queue."""
     _ensure_worker_started()
     user = os.getenv("OUTLOOK_EMAIL", "")
-    user = os.getenv("OUTLOOK_EMAIL", "")
     password = os.getenv("OUTLOOK_PASSWORD", "")
     if not user or not password:
         print("[EmailQueue] SMTP not configured — skipping email.")

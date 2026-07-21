@@ -2,6 +2,7 @@ import { useState, useEffect } from 'react';
 import { Link, useLocation, useNavigate } from 'react-router-dom';
 import { LayoutDashboard, FileWarning, ListChecks, Shield, Menu, X, Sun, Moon, LogOut } from 'lucide-react';
 import { cn } from '@/lib/utils';
+import { getStoredJSON } from '@/lib/storage';
 
 const studentNavItems = [
   { label: 'Dashboard', path: '/', icon: LayoutDashboard },
@@ -21,7 +22,7 @@ const Navbar = () => {
   const [mobileOpen, setMobileOpen] = useState(false);
   const [dark, setDark] = useState(() => localStorage.getItem('theme') === 'dark');
 
-  const studentUser = JSON.parse(localStorage.getItem('student_user') || 'null');
+  const studentUser = getStoredJSON<{ name?: string }>('student_user');
   const isAdminLoggedIn = (() => {
     const session = localStorage.getItem(ADMIN_SESSION_KEY);
     if (!session) return false;
@@ -46,7 +47,7 @@ const Navbar = () => {
     navigate('/welcome');
   };
 
-  const adminUser = JSON.parse(localStorage.getItem('admin_user') || 'null');
+  const adminUser = getStoredJSON<{ name?: string }>('admin_user');
   const displayName = isAdminLoggedIn ? (adminUser?.name ?? 'Admin') : studentUser?.name ?? '';
 
   useEffect(() => {

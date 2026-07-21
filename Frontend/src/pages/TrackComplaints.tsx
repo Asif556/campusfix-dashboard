@@ -1,21 +1,29 @@
 import { useEffect, useState } from 'react';
 import { getComplaints } from '@/services/api';
+import { getStoredJSON } from '@/lib/storage';
 import ComplaintCard from '@/components/ComplaintCard';
 import { AcceptFeedbackModal, ReopenModal } from '@/components/AcceptReopenModals';
 import { Search, SlidersHorizontal, CheckCircle, RotateCcw } from 'lucide-react';
+import { toast } from 'sonner';
 
 const TrackComplaints = () => {
   const [complaints, setComplaints] = useState<any[]>([]);
   const [filter, setFilter]         = useState('All');
   const [search, setSearch]         = useState('');
+  const [loading, setLoading]       = useState(true);
   const [accepting, setAccepting]   = useState<any | null>(null);
   const [reopening, setReopening]   = useState<any | null>(null);
 
-  const user = JSON.parse(localStorage.getItem('student_user') || '{}');
+  const user = getStoredJSON<{ name?: string; email?: string }>('student_user') ?? {};
   const studentName = user.name || user.email?.split('@')[0] || 'Student';
 
   useEffect(() => {
-    getComplaints(user.email).then(setComplaints);
+    if (!user.email) { setLoading(false); return; }
+    getComplaints(user.email)
+      .then(setComplaints)
+      .catch(() => toast.error('Failed to load complaints'))
+      .finally(() => setLoading(false));
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
   const handleActionDone = (id: string, newStatus: string) => {
@@ -121,7 +129,9 @@ const TrackComplaints = () => {
         ))}
       </div>
 
-      {filtered.length === 0 && (
+      {loading ? (
+        <div className="text-center py-20 text-sm text-muted-foreground">Loading complaints…</div>
+      ) : filtered.length === 0 ? (
         <div className="text-center py-20">
           <div className="w-16 h-16 rounded-full bg-muted flex items-center justify-center mx-auto mb-4">
             <Search className="h-6 w-6 text-muted-foreground" />
@@ -129,7 +139,7 @@ const TrackComplaints = () => {
           <p className="text-lg font-semibold font-display text-foreground">No complaints found</p>
           <p className="text-sm text-muted-foreground mt-1">Try adjusting your filters or search query</p>
         </div>
-      )}
+      ) : null}
     </div>
   );
 };

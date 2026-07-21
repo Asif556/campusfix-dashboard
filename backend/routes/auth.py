@@ -1,7 +1,6 @@
 import os
 import random
 import smtplib
-import requests as http_requests
 from email.mime.text import MIMEText
 from email.mime.multipart import MIMEMultipart
 from datetime import datetime, timezone, timedelta
@@ -26,9 +25,9 @@ def _load_admins() -> list[dict]:
         if not email:
             break
         admins.append({
-            "email":    email.strip().lower(),
-            "password": os.getenv(f"ADMIN_{i}_PASSWORD", ""),
-            "name":     os.getenv(f"ADMIN_{i}_NAME", "Admin"),
+            "email":         email.strip().lower(),
+            "password_hash": generate_password_hash(os.getenv(f"ADMIN_{i}_PASSWORD", "")),
+            "name":          os.getenv(f"ADMIN_{i}_NAME", "Admin"),
         })
         i += 1
     return admins
@@ -274,62 +273,6 @@ def student_login():
     }), 200
 
 
-@auth_bp.route("/auth/microsoft", methods=["POST"])
-def microsoft_login():
-    """Verify Microsoft access token, enforce uem.edu.in domain."""
-    data         = request.get_json(silent=True) or {}
-    access_token = data.get("access_token", "")
-
-    if not access_token:
-        return jsonify({"error": "Microsoft access token is required"}), 400
-
-    # Call Microsoft Graph to get user info
-    resp = http_requests.get(
-        "https://graph.microsoft.com/v1.0/me",
-        headers={"Authorization": f"Bearer {access_token}"},
-        timeout=10,
-    )
-
-    if resp.status_code != 200:
-        return jsonify({"error": "Invalid or expired Microsoft token"}), 401
-
-    info  = resp.json()
-    email = (info.get("mail") or info.get("userPrincipalName") or "").lower().strip()
-    name  = info.get("displayName") or email.split("@")[0].title()
-
-    if not email:
-        return jsonify({"error": "Could not retrieve email from Microsoft account"}), 400
-
-    # ── Enforce allowed student domains ──────────────────────────────────
-    if not _is_allowed_student_email(email):
-        return jsonify({
-            "error": "Access restricted to students only. Please use your @uem.edu.in or @iem.edu.in Outlook account."
-        }), 403
-
-    # Upsert student in DB
-    students_collection.update_one(
-        {"email": email},
-        {
-            "$set": {
-                "email":      email,
-                "name":       name,
-                "last_login": datetime.now(timezone.utc),
-                "provider":   "microsoft",
-            },
-            "$setOnInsert": {"created_at": datetime.now(timezone.utc)},
-        },
-        upsert=True,
-    )
-
-    return jsonify({
-        "success": True,
-        "message": "Login successful",
-        "user": {"email": email, "role": "student", "name": name},
-    }), 200
-
-
-
-
 
 @auth_bp.route("/auth/admin-login", methods=["POST"])
 def admin_login():
@@ -339,7 +282,7 @@ def admin_login():
     password = data.get("password", "")
 
     for admin in ADMINS:
-        if email == admin["email"] and password == admin["password"]:
+        if email == admin["email"] and check_password_hash(admin["password_hash"], password):
             return jsonify({
                 "success": True,
                 "message": "Login successful",

@@ -1,7 +1,25 @@
 import axios from 'axios';
 
-//export const API_BASE_URL = 'http://127.0.0.1:5000/campusfix/api';
-export const API_BASE_URL = 'https://server.uemcseaiml.org/campusfix/api';
+export const API_BASE_URL = 'http://127.0.0.1:5000/campusfix/api';
+//export const API_BASE_URL = 'https://server.uemcseaiml.org/campusfix/api';
+
+// Origin of the API server (strip the "/campusfix/api" suffix) — used to build
+// absolute URLs for static assets like uploaded photos.
+export const API_ORIGIN = API_BASE_URL.replace(/\/campusfix\/api\/?$/, '');
+
+/**
+ * Resolve a stored complaint photo path to an absolute, loadable URL.
+ * The backend stores paths like "/uploads/<name>" but serves them at
+ * "<origin>/campusfix/uploads/<name>". Rendering the raw value as-is resolves
+ * it against the frontend origin (404). This normalises both.
+ */
+export const resolvePhotoUrl = (photo?: string | null): string | null => {
+  if (!photo) return null;
+  if (/^https?:\/\//i.test(photo)) return photo; // already absolute
+  const filename = photo.split('/').filter(Boolean).pop();
+  if (!filename) return null;
+  return `${API_ORIGIN}/campusfix/uploads/${filename}`;
+};
 
 const API = axios.create({
   //baseURL: '/api',
@@ -12,11 +30,6 @@ const API = axios.create({
 });
 
 // ── Auth ─────────────────────────────────────────────────────────────────
-export const microsoftLogin = async (accessToken: string) => {
-  const res = await API.post('/auth/microsoft', { access_token: accessToken });
-  return res.data;
-};
-
 export const studentRegister = async (name: string, email: string, password: string) => {
   try {
     const res = await API.post('/auth/student-register', { name, email, password });
@@ -53,12 +66,6 @@ export const verifyOtp = async (email: string, otp: string) => {
 
 export const adminLogin = async (email: string, password: string) => {
   const res = await API.post('/auth/admin-login', { email, password });
-  return res.data;
-};
-
-// Legacy — kept for backward compat
-export const login = async (email: string, password: string) => {
-  const res = await API.post('/login', { email, password });
   return res.data;
 };
 
