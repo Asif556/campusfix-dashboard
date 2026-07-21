@@ -52,7 +52,11 @@ def uploaded_file(filename):
 
 
 if __name__ == "__main__":
+    # Bind to all interfaces by default so a phone/emulator on the same Wi-Fi can
+    # reach the API over the LAN (e.g. http://192.168.0.5:5000). Set HOST=127.0.0.1
+    # to restrict back to localhost-only.
+    host = os.environ.get("HOST", "0.0.0.0")
     port = int(os.environ.get("PORT", 5000))
     # Never default the Werkzeug debugger on — it allows RCE via the console.
     debug = os.getenv("FLASK_DEBUG", "").lower() in ("1", "true", "yes", "on")
-    app.run(debug=debug, port=port)
+    app.run(host=host, debug=debug, port=port)

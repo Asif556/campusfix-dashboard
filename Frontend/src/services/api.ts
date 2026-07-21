@@ -1,6 +1,7 @@
 import axios from 'axios';
 
-export const API_BASE_URL = 'http://127.0.0.1:5000/campusfix/api';
+export const API_BASE_URL = 'http://192.168.0.5:8000/campusfix/api';
+//export const API_BASE_URL = 'http://127.0.0.1:5000/campusfix/api';
 //export const API_BASE_URL = 'https://server.uemcseaiml.org/campusfix/api';
 
 // Origin of the API server (strip the "/campusfix/api" suffix) — used to build
