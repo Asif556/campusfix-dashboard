@@ -182,7 +182,11 @@ class _ComplaintDetailsScreenState extends State<ComplaintDetailsScreen> {
                       : 'Raised by ${c.studentEmail}'),
               const SizedBox(height: 18),
               if (c.isPendingAcceptance && isOwner) ...[
-                _ActionBanner(onAccept: _accept, onReopen: _reopen),
+                _ActionBanner(
+                  onAccept: _accept,
+                  onReopen: _reopen,
+                  deadline: c.autoAcceptDeadline,
+                ),
                 const SizedBox(height: 18),
               ],
               _InfoBlock(
@@ -271,11 +275,18 @@ class _ComplaintDetailsScreenState extends State<ComplaintDetailsScreen> {
 class _ActionBanner extends StatelessWidget {
   final VoidCallback onAccept;
   final VoidCallback onReopen;
-  const _ActionBanner({required this.onAccept, required this.onReopen});
+  final DateTime? deadline;
+  const _ActionBanner({
+    required this.onAccept,
+    required this.onReopen,
+    this.deadline,
+  });
 
   @override
   Widget build(BuildContext context) {
     final amber = AppColors.statusPending;
+    final remaining = fmtRemaining(deadline);
+    final by = fmtTimestamp(deadline?.toIso8601String());
     return Container(
       padding: const EdgeInsets.all(16),
       decoration: BoxDecoration(
@@ -308,6 +319,19 @@ class _ActionBanner extends StatelessWidget {
                           height: 1.4,
                           color: amber.withValues(alpha: 0.9)),
                     ),
+                    if (remaining != null) ...[
+                      const SizedBox(height: 6),
+                      Text(
+                        by != null
+                            ? "⏳ If you don't respond, the fix is auto-accepted $remaining (by $by)."
+                            : "⏳ If you don't respond, the fix is auto-accepted $remaining.",
+                        style: TextStyle(
+                            fontSize: 12,
+                            height: 1.4,
+                            fontWeight: FontWeight.w700,
+                            color: amber),
+                      ),
+                    ],
                   ],
                 ),
               ),
@@ -535,6 +559,9 @@ class _Timeline extends StatelessWidget {
             ? 'Marked resolved by $by'
             : 'Awaiting your confirmation';
       case 'Completed':
+        if (meta['Completed']?.autoAccepted == true) {
+          return 'Auto-accepted — no response in time';
+        }
         final by = meta['Completed']?.studentName ?? '';
         return by.isNotEmpty ? 'Fix accepted by $by' : null;
       case 'Reopened':

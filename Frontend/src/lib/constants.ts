@@ -14,6 +14,8 @@ export const CATEGORIES = [
   'Furniture',
   'Cleanliness',
   'Infrastructure',
+  'Bathroom',
+  'Computer',
 ] as const;
 
 export type Category = (typeof CATEGORIES)[number];
@@ -32,6 +34,8 @@ export const CATEGORY_META: Record<string, { emoji: string; softGradient: string
   Furniture:      { emoji: '🪑',   softGradient: 'from-orange-500/20 to-amber-500/10',  solidGradient: 'from-orange-500 to-amber-500' },
   Cleanliness:    { emoji: '🧹',   softGradient: 'from-emerald-500/20 to-green-500/10', solidGradient: 'from-emerald-500 to-green-500' },
   Infrastructure: { emoji: '🏗️', softGradient: 'from-slate-500/20 to-gray-500/10',   solidGradient: 'from-slate-500 to-gray-500' },
+  Bathroom:       { emoji: '🚿',   softGradient: 'from-teal-500/20 to-cyan-500/10',    solidGradient: 'from-teal-500 to-cyan-500' },
+  Computer:       { emoji: '💻',   softGradient: 'from-sky-500/20 to-indigo-500/10',   solidGradient: 'from-sky-500 to-indigo-500' },
 };
 
 /** Emoji for a category, falling back to the default category's emoji. */

@@ -7,6 +7,7 @@ from flask import Flask, send_from_directory, jsonify, request
 from flask_cors import CORS
 
 import utils.email_queue  # noqa: F401 — starts background email worker thread
+from utils.auto_accept import start_auto_accept_worker
 from extensions import limiter
 from routes.complaints import complaints_bp
 from routes.admin import admin_bp
@@ -51,6 +52,12 @@ app.register_blueprint(admin_bp, url_prefix="/campusfix/api")
 app.register_blueprint(dashboard_bp, url_prefix="/campusfix/api")
 app.register_blueprint(auth_bp, url_prefix="/campusfix/api")
 app.register_blueprint(authorities_bp, url_prefix="/campusfix/api")
+
+
+# Start the background sweeper that auto-accepts fixes the student never responded
+# to. At module scope so it runs under gunicorn (which imports `app:app`) too, not
+# just `python app.py`. Idempotent + atomically guarded, so multiple workers are safe.
+start_auto_accept_worker()
 
 
 @app.route("/")

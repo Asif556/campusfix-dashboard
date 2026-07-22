@@ -29,6 +29,19 @@ const fmtTimestamp = (iso: string) => {
   });
 };
 
+/** Rough "time left until <iso>" phrase, e.g. "in ~20h 30m". */
+const fmtRemaining = (iso: string): string | null => {
+  if (!iso) return null;
+  const ms = new Date(iso).getTime() - Date.now();
+  if (Number.isNaN(ms)) return null;
+  if (ms <= 0) return 'any moment now';
+  const totalMins = Math.floor(ms / 60000);
+  const h = Math.floor(totalMins / 60);
+  const m = totalMins % 60;
+  if (h >= 1) return `in ~${h}h${m ? ` ${m}m` : ''}`;
+  return `in ~${m}m`;
+};
+
 /* ── Image Lightbox ─────────────────────────────────────────────────────── */
 const ZOOM_STEP = 0.25;
 const ZOOM_MIN  = 0.5;
@@ -211,7 +224,7 @@ const ComplaintDetails = () => {
   const statusIndex = displaySteps.findIndex(s => s.label === complaint.status);
 
   const statusTimestamps: Record<string, string> = {};
-  const statusMeta: Record<string, { admin_name: string; authority_name: string; student_name: string; reason: string }> = {};
+  const statusMeta: Record<string, { admin_name: string; authority_name: string; student_name: string; reason: string; auto_accepted: boolean }> = {};
   (complaint.status_history || []).forEach((h: any) => {
     if (h.status && h.timestamp && !statusTimestamps[h.status]) {
       statusTimestamps[h.status] = h.timestamp;
@@ -222,6 +235,7 @@ const ComplaintDetails = () => {
         authority_name: h.authority_name || '',
         student_name: h.student_name || '',
         reason: h.reason || '',
+        auto_accepted: !!h.auto_accepted,
       };
     }
   });
@@ -255,6 +269,7 @@ const ComplaintDetails = () => {
         return adminBy ? `Resolved by Admin — ${adminBy}` : 'Awaiting student confirmation';
       }
       case 'Completed': {
+        if (statusMeta['Completed']?.auto_accepted) return 'Auto-accepted — no response in time';
         const studentBy = statusMeta['Completed']?.student_name || '';
         return studentBy ? `Fix accepted by ${studentBy}` : null;
       }
@@ -301,6 +316,7 @@ const ComplaintDetails = () => {
       case 'Pending Acceptance':
         return { title: 'Marked as resolved', detail: h.authority_name ? `by ${h.authority_name}` : h.admin_name ? `by Admin — ${h.admin_name}` : undefined };
       case 'Completed':
+        if (h.auto_accepted) return { title: 'Fix auto-accepted', detail: 'no student response in time' };
         return { title: 'Fix accepted', detail: h.student_name ? `by ${h.student_name}` : undefined };
       case 'Reopened':
         return { title: 'Complaint reopened', detail: h.student_name ? `by ${h.student_name}` : undefined, reason: h.reason };
@@ -421,6 +437,12 @@ const ComplaintDetails = () => {
                     <p className="text-xs text-amber-600/80 dark:text-amber-500/80 mt-0.5">
                       The admin has marked this issue as resolved. Please verify and either accept the fix or reopen if the problem persists.
                     </p>
+                    {complaint.auto_accept_at && (
+                      <p className="text-xs text-amber-700/90 dark:text-amber-400/90 mt-2 font-medium">
+                        ⏳ If you don't respond, the fix is <strong>auto-accepted {fmtRemaining(complaint.auto_accept_at)}</strong>
+                        {fmtTimestamp(complaint.auto_accept_at) ? ` (by ${fmtTimestamp(complaint.auto_accept_at)})` : ''}.
+                      </p>
+                    )}
                   </div>
                 </div>
                 <div className="flex gap-3">

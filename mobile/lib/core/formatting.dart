@@ -23,3 +23,16 @@ String? fmtDate(String? iso) {
   final ist = dt.toUtc().add(_istOffset);
   return DateFormat('dd MMM yyyy').format(ist);
 }
+
+/// Rough "time left until [deadline]" phrase, e.g. "in ~20h 30m".
+/// Returns "any moment now" once the deadline has passed.
+String? fmtRemaining(DateTime? deadline) {
+  if (deadline == null) return null;
+  final ms = deadline.toUtc().difference(DateTime.now().toUtc()).inMilliseconds;
+  if (ms <= 0) return 'any moment now';
+  final totalMins = ms ~/ 60000;
+  final h = totalMins ~/ 60;
+  final m = totalMins % 60;
+  if (h >= 1) return 'in ~${h}h${m > 0 ? ' ${m}m' : ''}';
+  return 'in ~${m}m';
+}

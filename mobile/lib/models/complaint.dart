@@ -39,6 +39,7 @@ class StatusHistoryEntry {
   final String authorityName;
   final String studentName;
   final String reason;
+  final bool autoAccepted; // true on the Completed entry the sweeper wrote
 
   const StatusHistoryEntry({
     required this.status,
@@ -47,6 +48,7 @@ class StatusHistoryEntry {
     required this.authorityName,
     required this.studentName,
     required this.reason,
+    this.autoAccepted = false,
   });
 
   factory StatusHistoryEntry.fromJson(Map<String, dynamic> json) =>
@@ -57,6 +59,7 @@ class StatusHistoryEntry {
         authorityName: (json['authority_name'] ?? '').toString(),
         studentName: (json['student_name'] ?? '').toString(),
         reason: (json['reason'] ?? '').toString(),
+        autoAccepted: json['auto_accepted'] == true,
       );
 }
 
@@ -99,6 +102,8 @@ class Complaint {
   final AssignedTo? assignedTo;
   final String studentFeedback;
   final String reopenReason;
+  final String autoAcceptAt; // ISO deadline; empty unless Pending Acceptance
+  final bool autoAccepted; // fix was auto-accepted (no student response)
 
   const Complaint({
     required this.id,
@@ -115,9 +120,15 @@ class Complaint {
     required this.assignedTo,
     required this.studentFeedback,
     required this.reopenReason,
+    this.autoAcceptAt = '',
+    this.autoAccepted = false,
   });
 
   bool get isPendingAcceptance => status == 'Pending Acceptance';
+
+  /// Parsed auto-accept deadline, or null when not pending / unset.
+  DateTime? get autoAcceptDeadline =>
+      autoAcceptAt.isEmpty ? null : DateTime.tryParse(autoAcceptAt);
 
   factory Complaint.fromJson(Map<String, dynamic> json) {
     final historyRaw = (json['status_history'] as List?) ?? const [];
@@ -145,6 +156,8 @@ class Complaint {
           : null,
       studentFeedback: (json['student_feedback'] ?? '').toString(),
       reopenReason: (json['reopen_reason'] ?? '').toString(),
+      autoAcceptAt: (json['auto_accept_at'] ?? '').toString(),
+      autoAccepted: json['auto_accepted'] == true,
     );
   }
 
@@ -163,5 +176,7 @@ class Complaint {
         assignedTo: assignedTo,
         studentFeedback: studentFeedback,
         reopenReason: reopenReason,
+        autoAcceptAt: autoAcceptAt,
+        autoAccepted: autoAccepted,
       );
 }

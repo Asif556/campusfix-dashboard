@@ -18,3 +18,12 @@ if not SECRET_KEY:
 
 # How long an issued login token stays valid, in seconds (default 24h).
 TOKEN_MAX_AGE = int(os.getenv("TOKEN_MAX_AGE", 24 * 60 * 60))
+
+# ── Auto-accept of unresponded fixes ──────────────────────────────────────────
+# When an authority/admin marks a complaint "Pending Acceptance", the student is
+# asked to accept the fix or reopen it. If they do neither within this many hours,
+# a background sweeper closes it on their behalf (status -> Completed, flagged
+# auto_accepted). Default: 1 day.
+AUTO_ACCEPT_AFTER_HOURS = int(os.getenv("AUTO_ACCEPT_AFTER_HOURS", 24))
+# How often the sweeper scans for expired pending-acceptance complaints, in seconds.
+AUTO_ACCEPT_SWEEP_INTERVAL_SECONDS = int(os.getenv("AUTO_ACCEPT_SWEEP_INTERVAL_SECONDS", 15 * 60))

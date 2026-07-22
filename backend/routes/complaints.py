@@ -265,11 +265,16 @@ def update_status(complaint_id):
     if admin_name:
         history_entry["admin_name"] = admin_name
 
+    set_fields = {"status": new_status, "updated_at": now}
+    # Start the student's auto-accept clock the moment the fix is marked pending.
+    if new_status == "Pending Acceptance":
+        set_fields["pending_since"] = now
+
     # Conditional on the status we just read — closes the check-then-write race.
     result = complaints_collection.update_one(
         {"_id": ObjectId(complaint_id), "status": current_status},
         {
-            "$set": {"status": new_status, "updated_at": now},
+            "$set": set_fields,
             "$push": {"status_history": history_entry},
         },
     )
@@ -467,7 +472,8 @@ def authority_mark_done(complaint_id):
     result = complaints_collection.update_one(
         {"_id": ObjectId(complaint_id), "status": "In Progress", "assigned_to.authority_id": authority_id},
         {
-            "$set": {"status": "Pending Acceptance", "updated_at": now},
+            # `pending_since` starts the student's auto-accept clock.
+            "$set": {"status": "Pending Acceptance", "pending_since": now, "updated_at": now},
             "$push": {"status_history": {
                 "status": "Pending Acceptance",
                 "timestamp": now,

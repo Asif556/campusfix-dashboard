@@ -19,6 +19,8 @@ const List<CategoryMeta> kCategories = [
   CategoryMeta('Furniture', '🪑', [Color(0xFFF97316), Color(0xFFF59E0B)]),
   CategoryMeta('Cleanliness', '🧹', [Color(0xFF10B981), Color(0xFF22C55E)]),
   CategoryMeta('Infrastructure', '🏗️', [Color(0xFF64748B), Color(0xFF6B7280)]),
+  CategoryMeta('Bathroom', '🚿', [Color(0xFF14B8A6), Color(0xFF06B6D4)]),
+  CategoryMeta('Computer', '💻', [Color(0xFF0EA5E9), Color(0xFF6366F1)]),
 ];
 
 const String kDefaultCategory = 'Infrastructure';

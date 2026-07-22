@@ -1,4 +1,8 @@
+from datetime import timedelta
+
 from bson import ObjectId
+
+from config import AUTO_ACCEPT_AFTER_HOURS
 
 
 def _normalize_photo(url: str | None) -> str | None:
@@ -57,12 +61,25 @@ def serialize_complaint(doc):
             "authority_name": h.get("authority_name", ""),
             "student_name": h.get("student_name", ""),
             "reason": h.get("reason", ""),
+            # True on the Completed entry the sweeper writes when nobody responded.
+            "auto_accepted": bool(h.get("auto_accepted", False)),
         }
         for h in raw_history
     ]
 
     # Fallback ticket number for old records that predate this field
     ticket_number = doc.get("ticket_number") or f"CF-LEGACY-{str(doc['_id'])[-5:].upper()}"
+
+    # Deadline by which an unresponded "Pending Acceptance" fix is auto-accepted.
+    # Legacy docs pending before `pending_since` existed fall back to updated_at.
+    status = doc.get("status", "Submitted")
+    pending_since = doc.get("pending_since")
+    if status == "Pending Acceptance" and not pending_since:
+        pending_since = doc.get("updated_at")
+    auto_accept_at = (
+        _fmt_ts(pending_since + timedelta(hours=AUTO_ACCEPT_AFTER_HOURS))
+        if status == "Pending Acceptance" and pending_since else ""
+    )
 
     return {
         "_id": str(doc["_id"]),
@@ -84,6 +101,10 @@ def serialize_complaint(doc):
         "assignedTo": _serialize_assigned_to(doc.get("assigned_to")),
         "student_feedback": doc.get("student_feedback", ""),
         "reopen_reason": doc.get("reopen_reason", ""),
+        # ISO deadline for auto-accept (empty unless currently Pending Acceptance).
+        "auto_accept_at": auto_accept_at,
+        # True once the fix was auto-accepted because the student never responded.
+        "auto_accepted": bool(doc.get("auto_accepted", False)),
     }
 
 

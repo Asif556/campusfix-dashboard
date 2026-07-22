@@ -22,6 +22,8 @@ import requests as http_requests
 from email.mime.multipart import MIMEMultipart
 from email.mime.text import MIMEText
 
+from config import AUTO_ACCEPT_AFTER_HOURS
+
 # ── Textbee config ────────────────────────────────────────────────────────────
 _TEXTBEE_API_KEY  = os.getenv("TEXTBEE_API_KEY", "")
 _TEXTBEE_DEVICE_ID = os.getenv("TEXTBEE_DEVICE_ID", "")
@@ -31,6 +33,11 @@ _HOST = os.getenv("OUTLOOK_HOST", "smtp.office365.com")
 _PORT = int(os.getenv("OUTLOOK_PORT", 587))
 _USER = os.getenv("OUTLOOK_EMAIL", "")
 _PASS = os.getenv("OUTLOOK_PASSWORD", "")
+
+# Public student portal. Every student-facing email must link here — pass
+# `cta_url=STUDENT_PORTAL_URL` to `_html`. (Admin/authority emails must NOT use it;
+# they have their own portals.)
+STUDENT_PORTAL_URL = os.getenv("STUDENT_PORTAL_URL", "https://campusfix.iem.edu.in")
 
 
 def _load_admin_emails() -> list[str]:
@@ -161,7 +168,8 @@ def send_sms_assignment(
 
 
 # ── HTML template ─────────────────────────────────────────────────────────────
-def _html(heading: str, rows: list[str], highlight: str = "", footer_note: str = "") -> str:
+def _html(heading: str, rows: list[str], highlight: str = "", footer_note: str = "",
+          cta_url: str = "") -> str:
     rows_html = "".join(
         f'<p style="color:#64748b;font-size:14px;margin:0 0 10px;">{r}</p>' for r in rows
     )
@@ -171,6 +179,18 @@ def _html(heading: str, rows: list[str], highlight: str = "", footer_note: str =
           <span style="font-size:18px;font-weight:800;letter-spacing:2px;color:#1e3a8a;">{highlight}</span>
         </div>
     """ if highlight else ""
+    # Student-facing call-to-action linking to the public portal.
+    cta_html = f"""
+        <div style="text-align:center;margin:22px 0 6px;">
+          <a href="{cta_url}" style="display:inline-block;background:linear-gradient(135deg,#1e3a8a,#3b82f6);
+             color:#ffffff;text-decoration:none;font-size:14px;font-weight:700;padding:12px 30px;border-radius:10px;">
+            Open CampusFix
+          </a>
+          <p style="margin:10px 0 0;color:#94a3b8;font-size:12px;">
+            or visit <a href="{cta_url}" style="color:#3b82f6;text-decoration:none;font-weight:600;">{cta_url}</a>
+          </p>
+        </div>
+    """ if cta_url else ""
     footer_html = f'<p style="color:#94a3b8;font-size:12px;text-align:center;margin:16px 0 0;">{footer_note}</p>' if footer_note else ""
     return f"""
     <html><body style="margin:0;padding:0;background:#f1f5f9;font-family:Arial,sans-serif;">
@@ -190,6 +210,7 @@ def _html(heading: str, rows: list[str], highlight: str = "", footer_note: str =
                 <h2 style="color:#1e3a8a;font-size:16px;margin:0 0 16px;">{heading}</h2>
                 {rows_html}
                 {highlight_html}
+                {cta_html}
                 {footer_html}
               </td>
             </tr>
@@ -227,6 +248,7 @@ def send_complaint_raised_to_student(c: dict) -> None:
             ],
             highlight=c["ticket_number"],
             footer_note="Keep this ticket number for future reference.",
+            cta_url=STUDENT_PORTAL_URL,
         ),
     )
 
@@ -307,6 +329,7 @@ def send_accepted_to_student(c: dict) -> None:
             ],
             highlight=c["ticket_number"],
             footer_note="You will be notified once the fix is ready to verify.",
+            cta_url=STUDENT_PORTAL_URL,
         ),
     )
 
@@ -370,6 +393,7 @@ def send_pending_acceptance(c: dict) -> None:
             ],
             highlight=c["ticket_number"],
             footer_note="Your response helps us improve campus infrastructure.",
+            cta_url=STUDENT_PORTAL_URL,
         ),
     )
 
@@ -386,6 +410,61 @@ def send_fix_accepted_to_admins(c: dict, feedback: str, student_name: str) -> No
                     f"<strong>Ticket:</strong> {c['ticket_number']}",
                     f"<strong>Accepted by:</strong> {student_name}",
                     f"<strong>Student feedback:</strong> {feedback or 'No feedback provided.'}",
+                ],
+                footer_note="This complaint is now fully closed.",
+            ),
+        )
+
+
+def _auto_accept_window_label() -> str:
+    """Human phrase for the auto-accept window, e.g. '1 day' or '36 hours'."""
+    hours = AUTO_ACCEPT_AFTER_HOURS
+    if hours % 24 == 0:
+        days = hours // 24
+        return "1 day" if days == 1 else f"{days} days"
+    return "1 hour" if hours == 1 else f"{hours} hours"
+
+
+def send_fix_auto_accepted_to_student(c: dict) -> None:
+    """Tell the student their complaint was auto-closed after no response."""
+    to = c.get("student_email", "")
+    if not to:
+        return
+    loc = c.get("location", {})
+    enqueue_email(
+        to=to,
+        subject=f"CampusFix — Complaint Auto-Closed ({c['ticket_number']})",
+        html=_html(
+            "Your complaint has been automatically closed ✅",
+            [
+                f"Hi {to.split('@')[0].title()},",
+                f"We didn't hear back within {_auto_accept_window_label()}, so your complaint "
+                f"<strong>{c['ticket_number']}</strong> ({c.get('category', '')} at "
+                f"{loc.get('building', '')}, Room {loc.get('room', '')}) has been "
+                f"<strong>automatically marked as resolved</strong> and closed.",
+                "If the issue still persists, please raise a new complaint and we'll look into it.",
+            ],
+            highlight=c["ticket_number"],
+            footer_note="Auto-closed because no response was received in time.",
+            cta_url=STUDENT_PORTAL_URL,
+        ),
+    )
+
+
+def send_fix_auto_accepted_to_admins(c: dict) -> None:
+    """Notify admins that a fix was auto-accepted for want of a student response."""
+    for email in _load_admin_emails():
+        enqueue_email(
+            to=email,
+            subject=f"CampusFix — Fix Auto-Accepted ({c['ticket_number']})",
+            html=_html(
+                "⏱️ A fix was auto-accepted",
+                [
+                    f"<strong>Ticket:</strong> {c['ticket_number']}",
+                    f"<strong>Category:</strong> {c.get('category', '')}",
+                    f"<strong>Raised by:</strong> {c.get('student_email', 'unknown')}",
+                    f"The student did not respond within {_auto_accept_window_label()}, so the fix "
+                    f"was <strong>auto-accepted</strong> and the complaint is now closed.",
                 ],
                 footer_note="This complaint is now fully closed.",
             ),
