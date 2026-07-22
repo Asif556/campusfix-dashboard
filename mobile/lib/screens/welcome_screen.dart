@@ -2,7 +2,6 @@ import 'package:flutter/material.dart';
 
 import '../core/theme.dart';
 import 'login_screen.dart';
-import 'settings_screen.dart';
 
 class WelcomeScreen extends StatelessWidget {
   const WelcomeScreen({super.key});
@@ -21,21 +20,6 @@ class WelcomeScreen extends StatelessWidget {
         child: SafeArea(
           child: Column(
             children: [
-              Align(
-                alignment: Alignment.centerRight,
-                child: Padding(
-                  padding: const EdgeInsets.all(8),
-                  child: IconButton(
-                    tooltip: 'Server settings',
-                    icon: const Icon(Icons.settings_outlined,
-                        color: Colors.white70),
-                    onPressed: () => Navigator.of(context).push(
-                      MaterialPageRoute(
-                          builder: (_) => const SettingsScreen()),
-                    ),
-                  ),
-                ),
-              ),
               const Spacer(),
               Padding(
                 padding: const EdgeInsets.symmetric(horizontal: 28),

@@ -4,7 +4,6 @@ import 'package:provider/provider.dart';
 import '../core/theme.dart';
 import '../state/auth_provider.dart';
 import '../state/complaints_provider.dart';
-import 'settings_screen.dart';
 
 class ProfileScreen extends StatelessWidget {
   const ProfileScreen({super.key});
@@ -119,14 +118,6 @@ class ProfileScreen extends StatelessWidget {
               ],
             ),
             const SizedBox(height: 20),
-            _MenuTile(
-              icon: Icons.dns_outlined,
-              title: 'Server Settings',
-              subtitle: 'Configure the backend address',
-              onTap: () => Navigator.of(context).push(
-                MaterialPageRoute(builder: (_) => const SettingsScreen()),
-              ),
-            ),
             _MenuTile(
               icon: Icons.info_outline_rounded,
               title: 'About CampusFix',

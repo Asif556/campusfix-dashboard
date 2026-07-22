@@ -14,17 +14,17 @@ class SessionStore {
 
   static const _kToken = 'auth_token';
   static const _kUser = 'student_user';
-  static const _kBaseUrl = 'server_base_url';
+  static const _kLegacyBaseUrl = 'server_base_url';
 
   late SharedPreferences _prefs;
   String? _token;
   AppUser? _user;
-  String? _baseUrlOverride;
 
   Future<void> init() async {
     _prefs = await SharedPreferences.getInstance();
     _token = _prefs.getString(_kToken);
-    _baseUrlOverride = _prefs.getString(_kBaseUrl);
+    // Drop any server address saved by older builds — the URL is now fixed.
+    await _prefs.remove(_kLegacyBaseUrl);
     final userRaw = _prefs.getString(_kUser);
     if (userRaw != null && userRaw.isNotEmpty) {
       try {
@@ -56,20 +56,6 @@ class SessionStore {
   }
 
   // ── Server URL ──────────────────────────────────────────────────────────
-  /// Effective base URL: the user override if set, else the platform default.
-  String get baseUrl =>
-      (_baseUrlOverride?.isNotEmpty ?? false) ? _baseUrlOverride! : Env.defaultBaseUrl;
-
-  bool get hasCustomBaseUrl => _baseUrlOverride?.isNotEmpty ?? false;
-
-  Future<void> setBaseUrl(String? url) async {
-    final normalized = url?.trim();
-    if (normalized == null || normalized.isEmpty) {
-      _baseUrlOverride = null;
-      await _prefs.remove(_kBaseUrl);
-    } else {
-      _baseUrlOverride = normalized;
-      await _prefs.setString(_kBaseUrl, normalized);
-    }
-  }
+  /// The fixed hosted backend URL. Not user-configurable.
+  String get baseUrl => Env.baseUrl;
 }

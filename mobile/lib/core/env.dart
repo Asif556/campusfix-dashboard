@@ -1,26 +1,18 @@
-import 'dart:io' show Platform;
-
-/// Environment defaults and URL helpers.
+/// Environment configuration and URL helpers.
 ///
-/// The backend serves the API under `/campusfix/api` and static uploads under
-/// `/campusfix/uploads`. On a device/emulator `127.0.0.1` points at the device
-/// itself, so the Android emulator must reach the host via `10.0.2.2`. The
-/// effective base URL is user-overridable from the in-app Settings screen; these
-/// are only the first-run defaults.
+/// The app talks to the hosted CampusFix backend. The API is served under
+/// `/campusfix/api` and static uploads under `/campusfix/uploads`. The server
+/// address is fixed — there is no in-app configuration.
 class Env {
   Env._();
 
+  /// Hosted backend origin (scheme + host, no trailing slash).
+  static const String origin = 'https://server.uemcseaiml.org';
+
   static const String apiSuffix = '/campusfix/api';
 
-  /// Sensible first-run default for the current platform.
-  static String get defaultBaseUrl {
-    if (Platform.isAndroid) {
-      // Android emulator loopback alias for the host machine.
-      return 'http://10.0.2.2:5000$apiSuffix';
-    }
-    // iOS simulator and everything else share the host loopback.
-    return 'http://127.0.0.1:5000$apiSuffix';
-  }
+  /// The single, fixed base URL the whole app talks to.
+  static const String baseUrl = '$origin$apiSuffix';
 
   /// Strip the `/campusfix/api` suffix to get the server origin, used to build
   /// absolute URLs for static assets like uploaded photos.

@@ -25,97 +25,51 @@ lib/
   widgets/     status_badge, complaint_card, dashboard_stat_card, category_avatar,
                gradient_button, accept_reopen_sheets
   screens/     welcome, login, home_shell, dashboard, report, track,
-               complaint_details, profile, settings
+               complaint_details, profile
 ```
 
-The bearer token, cached user, and server URL are persisted with `shared_preferences`. Every
-request carries `Authorization: Bearer <token>`; a `401` on a protected route logs you out.
+The backend URL is fixed in `lib/core/env.dart` (`Env.baseUrl` →
+`https://server.uemcseaiml.org/campusfix/api`); there's no in-app server configuration. The
+bearer token and cached user are persisted with `shared_preferences`. Every request carries
+`Authorization: Bearer <token>`; a `401` on a protected route logs you out.
 
 ## First-time setup (fresh clone)
 
-You need **two things running** — the backend on your computer and the app on your phone — both on
-the **same Wi-Fi network**.
+The app is wired to the **hosted CampusFix backend** at
+`https://server.uemcseaiml.org/campusfix/api` — there's no local server to run, no IP to find,
+and nothing to configure in-app. Build it onto a device and log in; it reaches the server over
+the internet, so the phone doesn't need to be on any particular network.
 
 **Prerequisites:** [Flutter SDK](https://docs.flutter.dev/get-started/install), plus the Android SDK
 (for Android) and/or Xcode + CocoaPods (for iOS, macOS only). Verify with `flutter doctor`.
 
-### Terminal 1 — start the backend (on the computer)
-
-```bash
-cd backend
-python3 -m venv venv            # only if venv/ isn't there yet
-source venv/bin/activate        # Windows: venv\Scripts\activate
-pip install -r requirements.txt
-PORT=8000 python app.py
-```
-
-You should see `Running on http://0.0.0.0:8000`. The `.env` (DB/SMTP config) is committed, so there's
-nothing else to configure. Leave this running.
-
-> **Why port 8000?** On macOS, AirPlay Receiver squats on port 5000 and will intercept the phone's
-> requests. Any free port works — 8000 is just the convention used here. `HOST` defaults to `0.0.0.0`
-> so devices on the LAN can reach it (set `HOST=127.0.0.1` to restrict to localhost).
-
-**Find the computer's LAN IP** — the app needs it (yours will differ):
-
-```bash
-# macOS (Wi-Fi; try en1 if en0 is blank)
-ipconfig getifaddr en0
-
-# Linux
-hostname -I | awk '{print $1}'
-
-# Windows — Command Prompt (shows the "IPv4 Address" line)
-ipconfig | findstr /i "IPv4"
-
-# Windows — PowerShell (the active adapter's IP directly)
-(Get-NetIPConfiguration | Where-Object IPv4DefaultGateway).IPv4Address.IPAddress
-```
-
-Example result: `192.168.1.42`. On Windows the CMD command prints a full line like
-`IPv4 Address. . . . . . . . . . . : 192.168.1.42` — use the number at the end.
-
-### Terminal 2 — run the app on the phone
+### Run the app
 
 ```bash
 cd mobile
 flutter pub get
-flutter devices                 # confirm the phone is listed
-flutter run                     # pick the phone if prompted
+flutter devices                 # confirm the phone/emulator is listed
+flutter run                     # pick the target if prompted
 ```
 
 - **Android phone:** enable **Developer options → USB debugging**, connect USB, tap **Allow**.
 - **iPhone:** open `ios/Runner.xcworkspace` in Xcode once to set a signing team (a free Apple ID
   works for development), then `flutter run`.
 
-### Point the app at the backend (one time)
-
-The built-in defaults only fit an emulator, so on a **physical phone** you set the address once — it's
-saved on the device, no rebuild needed:
-
-1. On the **Welcome** screen tap **⚙**, or after logging in go to **Profile → Server Settings**.
-2. Enter `http://<YOUR_IP>:8000/campusfix/api` (e.g. `http://192.168.1.42:8000/campusfix/api`).
-3. Tap **Test Connection** → it should say **“Connected.”**
-
 Then log in with your `@uem.edu.in` / `@iem.edu.in` email. Done.
 
-For reference, the per-platform defaults (used only if you never change the address):
+### Pointing at a different backend
 
-| Target                | Default base URL                        |
-| --------------------- | --------------------------------------- |
-| Android emulator      | `http://10.0.2.2:5000/campusfix/api`    |
-| iOS simulator / other | `http://127.0.0.1:5000/campusfix/api`   |
+The server address is a single constant — `Env.baseUrl` in `lib/core/env.dart`. To target another
+deployment (e.g. a local dev backend), edit that constant and rebuild. If you point it at a plain
+**HTTP** server, also re-enable cleartext traffic (Android `usesCleartextTraffic`, iOS ATS) — the
+hosted backend is HTTPS, so production builds don't need it.
 
-`10.0.2.2` is the Android emulator's alias for the host machine.
+### Troubleshooting
 
-### Troubleshooting “Test Connection” fails
-
-- Phone and computer on the **same Wi-Fi**? (Guest networks often block device-to-device traffic.)
-- **macOS firewall:** System Settings → Network → Firewall → allow incoming for Python (or disable to test).
-- Re-check the IP — laptops get a new one when they switch networks.
-
-Cleartext HTTP is enabled for development (Android `usesCleartextTraffic`, iOS ATS arbitrary loads)
-because the backend runs over plain HTTP locally. For a production HTTPS backend, tighten both.
+- **Can't log in / requests hang:** confirm the device has internet and that
+  `https://server.uemcseaiml.org/campusfix/api/dashboard` responds (a `401` means the API is up).
+- **OTP email doesn't arrive:** check spam; the address must be `@uem.edu.in` / `@iem.edu.in`.
 
 ## Build an installable APK
 
@@ -127,7 +81,7 @@ flutter build ios               # iOS (requires a full Xcode install + signing)
 ```
 
 Copy `app-release.apk` to the phone (Drive / email / USB) and tap it — accept **install from unknown
-sources**. The same Settings step above applies after installing.
+sources**. It points at the hosted backend out of the box, so just open it and log in.
 
 ## Tests / analysis
 
