@@ -12,13 +12,10 @@ export default defineConfig(({ mode }) => ({
       overlay: false,
     },
     proxy: {
-      '/api': {
-        target: 'http://localhost:5000',
+      '/campusfix': {
+        target: 'https://server.uemcseaiml.org',
         changeOrigin: true,
-      },
-      '/uploads': {
-        target: 'http://localhost:5000',
-        changeOrigin: true,
+        secure: false,
       },
     },
   },

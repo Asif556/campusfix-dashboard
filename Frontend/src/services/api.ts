@@ -1,8 +1,9 @@
 import axios from 'axios';
 
 //export const API_BASE_URL = 'http://192.168.0.5:8000/campusfix/api';
-//export const API_BASE_URL = 'http://127.0.0.1:5000/campusfix/api';
+//export const API_BASE_URL = 'http://127.0.0.1:5000/campusfix/api';  // local dev
 export const API_BASE_URL = 'https://server.uemcseaiml.org/campusfix/api';
+//export const API_BASE_URL = '/campusfix/api';
 
 // Origin of the API server (strip the "/campusfix/api" suffix) — used to build
 // absolute URLs for static assets like uploaded photos.
